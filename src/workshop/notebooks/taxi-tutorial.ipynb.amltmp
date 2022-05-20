@@ -1,0 +1,562 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": [
+        "# Tutorial: Build a regression model with Open Datasets\n",
+        "\n",
+        "In this tutorial, you leverage the convenience of Azure Open Datasets to create a regression model to predict NYC taxi fare prices. Easily download publicly available taxi, holiday and weather data to create a dataset that can train a regression model using sklearn."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.opendatasets import NycTlcGreen\n",
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "from datetime import datetime\n",
+        "from dateutil.relativedelta import relativedelta\n",
+        "\n",
+        "pd.options.mode.chained_assignment = None"
+      ],
+      "outputs": [],
+      "execution_count": 1,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Download Data\n",
+        "Begin by downloading the NYC Taxi dataset from Azure Open Datasets. In non-Spark environments, Open Datasets only allows one month of data at a time with certain classes to avoid MemoryError with large datasets. To download 1 year of taxi data, we will fetch 2000 random samples from each month.\n",
+        "\n",
+        "Note: Open Datasets has mirroring classes for working in Spark where data size and memory are not a concern."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "start = datetime.strptime(\"1/1/2016\",\"%m/%d/%Y\")\n",
+        "end = datetime.strptime(\"1/31/2016\",\"%m/%d/%Y\")\n",
+        "\n",
+        "green_taxi_df = pd.concat([NycTlcGreen(start + relativedelta(months=x), end + relativedelta(months=x)) \\\n",
+        "        .to_pandas_dataframe().sample(2000) for x in range(12)])\n",
+        "green_taxi_df"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "[Info] read from /tmp/tmpf1iyrgm5/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=1/part-00119-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2689-1.c000.snappy.parquet\n[Info] read from /tmp/tmp32804x8u/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=2/part-00060-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2630-2.c000.snappy.parquet\n[Info] read from /tmp/tmpw0rt3dir/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=3/part-00196-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2766-1.c000.snappy.parquet\n[Info] read from /tmp/tmpidjrmlfp/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=4/part-00121-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2691-1.c000.snappy.parquet\n[Info] read from /tmp/tmp8p6jz25i/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=5/part-00044-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2614-1.c000.snappy.parquet\n[Info] read from /tmp/tmpqflk4hqo/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=6/part-00108-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2678-1.c000.snappy.parquet\n[Info] read from /tmp/tmpy90c1u5g/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=7/part-00020-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2590-2.c000.snappy.parquet\n[Info] read from /tmp/tmpnvtzaeui/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=8/part-00172-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2742-2.c000.snappy.parquet\n[Info] read from /tmp/tmpk2doc862/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=9/part-00076-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2646-1.c000.snappy.parquet\n[Info] read from /tmp/tmp6_p03_p6/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=10/part-00090-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2660-1.c000.snappy.parquet\n[Info] read from /tmp/tmpfss1e1_v/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=11/part-00021-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2591-1.c000.snappy.parquet\n[Info] read from /tmp/tmpiqn3piua/https%3A/%2Fazureopendatastorage.azurefd.net/nyctlc/green/puYear=2016/puMonth=12/part-00116-tid-4753095944193949832-fee7e113-666d-4114-9fcb-bcd3046479f3-2686-1.c000.snappy.parquet\n"
+        },
+        {
+          "output_type": "execute_result",
+          "execution_count": 2,
+          "data": {
+            "text/plain": "         vendorID  lpepPickupDatetime lpepDropoffDatetime  passengerCount  \\\n268530          2 2016-01-22 01:35:28 2016-01-22 01:37:08               1   \n1041792         2 2016-01-25 05:05:05 2016-01-25 05:13:26               1   \n864871          2 2016-01-28 08:33:53 2016-01-28 08:39:30               1   \n890969          2 2016-01-30 02:41:06 2016-01-30 02:52:42               1   \n1276881         2 2016-01-01 02:27:13 2016-01-01 02:31:57               1   \n...           ...                 ...                 ...             ...   \n528496          2 2016-12-21 12:05:39 2016-12-21 12:17:03               1   \n776323          2 2016-12-30 07:08:14 2016-12-30 07:08:33               1   \n283655          2 2016-12-09 05:27:45 2016-12-09 05:33:38               2   \n662391          2 2016-12-22 14:02:57 2016-12-22 14:08:15               1   \n566252          2 2016-12-02 16:19:33 2016-12-02 16:24:25               1   \n\n         tripDistance puLocationId doLocationId  pickupLongitude  \\\n268530           0.64         None         None       -73.940681   \n1041792          1.49         None         None       -73.918732   \n864871           0.80         None         None       -73.911766   \n890969           3.09         None         None       -73.981056   \n1276881          1.17         None         None       -73.951233   \n...               ...          ...          ...              ...   \n528496           1.78          247          119              NaN   \n776323           0.02           42           42              NaN   \n283655           3.46          223          138              NaN   \n662391           2.30          223           70              NaN   \n566252           1.05          157           80              NaN   \n\n         pickupLatitude  dropoffLongitude  ...  paymentType  fareAmount extra  \\\n268530        40.814182        -73.936745  ...            2         4.0   0.5   \n1041792       40.742962        -73.899055  ...            2         8.0   0.5   \n864871        40.767883        -73.919769  ...            1         5.5   0.0   \n890969        40.685444        -74.010765  ...            1        12.0   0.5   \n1276881       40.812218        -73.944069  ...            1         6.0   0.5   \n...                 ...               ...  ...          ...         ...   ...   \n528496              NaN               NaN  ...            2         9.5   0.0   \n776323              NaN               NaN  ...            2         2.5   0.0   \n283655              NaN               NaN  ...            1        11.0   0.5   \n662391              NaN               NaN  ...            1         8.5   0.0   \n566252              NaN               NaN  ...            2         6.0   1.0   \n\n         mtaTax  improvementSurcharge  tipAmount  tollsAmount ehailFee  \\\n268530      0.5                   0.3       0.00          0.0      NaN   \n1041792     0.5                   0.3       0.00          0.0      NaN   \n864871      0.5                   0.3       1.26          0.0      NaN   \n890969      0.5                   0.3       2.66          0.0      NaN   \n1276881     0.5                   0.3       1.46          0.0      NaN   \n...         ...                   ...        ...          ...      ...   \n528496      0.5                   0.3       0.00          0.0      NaN   \n776323      0.5                   0.3       0.00          0.0      NaN   \n283655      0.5                   0.3       2.46          0.0      NaN   \n662391      0.5                   0.3       0.84          0.0      NaN   \n566252      0.5                   0.3       0.00          0.0      NaN   \n\n         totalAmount  tripType  \n268530          5.30       1.0  \n1041792         9.30       1.0  \n864871          7.56       1.0  \n890969         15.96       1.0  \n1276881         8.76       1.0  \n...              ...       ...  \n528496         10.30       1.0  \n776323          3.30       1.0  \n283655         14.76       1.0  \n662391         10.14       1.0  \n566252          7.80       1.0  \n\n[24000 rows x 23 columns]",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>vendorID</th>\n      <th>lpepPickupDatetime</th>\n      <th>lpepDropoffDatetime</th>\n      <th>passengerCount</th>\n      <th>tripDistance</th>\n      <th>puLocationId</th>\n      <th>doLocationId</th>\n      <th>pickupLongitude</th>\n      <th>pickupLatitude</th>\n      <th>dropoffLongitude</th>\n      <th>...</th>\n      <th>paymentType</th>\n      <th>fareAmount</th>\n      <th>extra</th>\n      <th>mtaTax</th>\n      <th>improvementSurcharge</th>\n      <th>tipAmount</th>\n      <th>tollsAmount</th>\n      <th>ehailFee</th>\n      <th>totalAmount</th>\n      <th>tripType</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>268530</th>\n      <td>2</td>\n      <td>2016-01-22 01:35:28</td>\n      <td>2016-01-22 01:37:08</td>\n      <td>1</td>\n      <td>0.64</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.940681</td>\n      <td>40.814182</td>\n      <td>-73.936745</td>\n      <td>...</td>\n      <td>2</td>\n      <td>4.0</td>\n      <td>0.5</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>0.00</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>5.30</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>1041792</th>\n      <td>2</td>\n      <td>2016-01-25 05:05:05</td>\n      <td>2016-01-25 05:13:26</td>\n      <td>1</td>\n      <td>1.49</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.918732</td>\n      <td>40.742962</td>\n      <td>-73.899055</td>\n      <td>...</td>\n      <td>2</td>\n      <td>8.0</td>\n      <td>0.5</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>0.00</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>9.30</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>864871</th>\n      <td>2</td>\n      <td>2016-01-28 08:33:53</td>\n      <td>2016-01-28 08:39:30</td>\n      <td>1</td>\n      <td>0.80</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.911766</td>\n      <td>40.767883</td>\n      <td>-73.919769</td>\n      <td>...</td>\n      <td>1</td>\n      <td>5.5</td>\n      <td>0.0</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>1.26</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>7.56</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>890969</th>\n      <td>2</td>\n      <td>2016-01-30 02:41:06</td>\n      <td>2016-01-30 02:52:42</td>\n      <td>1</td>\n      <td>3.09</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.981056</td>\n      <td>40.685444</td>\n      <td>-74.010765</td>\n      <td>...</td>\n      <td>1</td>\n      <td>12.0</td>\n      <td>0.5</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>2.66</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>15.96</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>1276881</th>\n      <td>2</td>\n      <td>2016-01-01 02:27:13</td>\n      <td>2016-01-01 02:31:57</td>\n      <td>1</td>\n      <td>1.17</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.951233</td>\n      <td>40.812218</td>\n      <td>-73.944069</td>\n      <td>...</td>\n      <td>1</td>\n      <td>6.0</td>\n      <td>0.5</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>1.46</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>8.76</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>...</th>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n    </tr>\n    <tr>\n      <th>528496</th>\n      <td>2</td>\n      <td>2016-12-21 12:05:39</td>\n      <td>2016-12-21 12:17:03</td>\n      <td>1</td>\n      <td>1.78</td>\n      <td>247</td>\n      <td>119</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>2</td>\n      <td>9.5</td>\n      <td>0.0</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>0.00</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>10.30</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>776323</th>\n      <td>2</td>\n      <td>2016-12-30 07:08:14</td>\n      <td>2016-12-30 07:08:33</td>\n      <td>1</td>\n      <td>0.02</td>\n      <td>42</td>\n      <td>42</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>2</td>\n      <td>2.5</td>\n      <td>0.0</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>0.00</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>3.30</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>283655</th>\n      <td>2</td>\n      <td>2016-12-09 05:27:45</td>\n      <td>2016-12-09 05:33:38</td>\n      <td>2</td>\n      <td>3.46</td>\n      <td>223</td>\n      <td>138</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>1</td>\n      <td>11.0</td>\n      <td>0.5</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>2.46</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>14.76</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>662391</th>\n      <td>2</td>\n      <td>2016-12-22 14:02:57</td>\n      <td>2016-12-22 14:08:15</td>\n      <td>1</td>\n      <td>2.30</td>\n      <td>223</td>\n      <td>70</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>1</td>\n      <td>8.5</td>\n      <td>0.0</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>0.84</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>10.14</td>\n      <td>1.0</td>\n    </tr>\n    <tr>\n      <th>566252</th>\n      <td>2</td>\n      <td>2016-12-02 16:19:33</td>\n      <td>2016-12-02 16:24:25</td>\n      <td>1</td>\n      <td>1.05</td>\n      <td>157</td>\n      <td>80</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>2</td>\n      <td>6.0</td>\n      <td>1.0</td>\n      <td>0.5</td>\n      <td>0.3</td>\n      <td>0.00</td>\n      <td>0.0</td>\n      <td>NaN</td>\n      <td>7.80</td>\n      <td>1.0</td>\n    </tr>\n  </tbody>\n</table>\n<p>24000 rows × 23 columns</p>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 2,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Now that the initial data is loaded, define a function to create various time-based features from the pickup datetime field. This will create new fields for the month number, day of month, day of week, and hour of day. From those, we calculate the sin and cosine transformations to capture the cyclical nature of the variable which will allow the model to factor in time-based seasonality. This function also adds a static feature for the country code to join the holiday data. Use the apply() function on the dataframe to interatively apply this function to each row in the dataframe."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def build_time_features(vector):\n",
+        "    pickup_datetime = vector[0]\n",
+        "    month_num = pickup_datetime.month\n",
+        "    day_of_month = pickup_datetime.day\n",
+        "    day_of_week = pickup_datetime.weekday()\n",
+        "    hour_of_day = pickup_datetime.hour\n",
+        "    country_code = \"US\"\n",
+        "    hr_sin = np.sin(hour_of_day*(2.*np.pi/24))\n",
+        "    hr_cos = np.cos(hour_of_day*(2.*np.pi/24))\n",
+        "    dy_sin = np.sin(day_of_week*(2.*np.pi/7))\n",
+        "    dy_cos = np.cos(day_of_week*(2.*np.pi/7))\n",
+        "    \n",
+        "    return pd.Series((month_num, day_of_month, day_of_week, hour_of_day, country_code, hr_sin, hr_cos, dy_sin, dy_cos))\n",
+        "\n",
+        "green_taxi_df[[\"month_num\", \"day_of_month\",\"day_of_week\", \"hour_of_day\", \"country_code\", \"hr_sin\", \"hr_cos\", \"dy_sin\", \"dy_cos\"]] = green_taxi_df[[\"lpepPickupDatetime\"]].apply(build_time_features, axis=1)\n",
+        "green_taxi_df"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 3,
+          "data": {
+            "text/plain": "         vendorID  lpepPickupDatetime lpepDropoffDatetime  passengerCount  \\\n268530          2 2016-01-22 01:35:28 2016-01-22 01:37:08               1   \n1041792         2 2016-01-25 05:05:05 2016-01-25 05:13:26               1   \n864871          2 2016-01-28 08:33:53 2016-01-28 08:39:30               1   \n890969          2 2016-01-30 02:41:06 2016-01-30 02:52:42               1   \n1276881         2 2016-01-01 02:27:13 2016-01-01 02:31:57               1   \n...           ...                 ...                 ...             ...   \n528496          2 2016-12-21 12:05:39 2016-12-21 12:17:03               1   \n776323          2 2016-12-30 07:08:14 2016-12-30 07:08:33               1   \n283655          2 2016-12-09 05:27:45 2016-12-09 05:33:38               2   \n662391          2 2016-12-22 14:02:57 2016-12-22 14:08:15               1   \n566252          2 2016-12-02 16:19:33 2016-12-02 16:24:25               1   \n\n         tripDistance puLocationId doLocationId  pickupLongitude  \\\n268530           0.64         None         None       -73.940681   \n1041792          1.49         None         None       -73.918732   \n864871           0.80         None         None       -73.911766   \n890969           3.09         None         None       -73.981056   \n1276881          1.17         None         None       -73.951233   \n...               ...          ...          ...              ...   \n528496           1.78          247          119              NaN   \n776323           0.02           42           42              NaN   \n283655           3.46          223          138              NaN   \n662391           2.30          223           70              NaN   \n566252           1.05          157           80              NaN   \n\n         pickupLatitude  dropoffLongitude  ...  tripType  month_num  \\\n268530        40.814182        -73.936745  ...       1.0          1   \n1041792       40.742962        -73.899055  ...       1.0          1   \n864871        40.767883        -73.919769  ...       1.0          1   \n890969        40.685444        -74.010765  ...       1.0          1   \n1276881       40.812218        -73.944069  ...       1.0          1   \n...                 ...               ...  ...       ...        ...   \n528496              NaN               NaN  ...       1.0         12   \n776323              NaN               NaN  ...       1.0         12   \n283655              NaN               NaN  ...       1.0         12   \n662391              NaN               NaN  ...       1.0         12   \n566252              NaN               NaN  ...       1.0         12   \n\n        day_of_month  day_of_week  hour_of_day  country_code        hr_sin  \\\n268530            22            4            1            US  2.588190e-01   \n1041792           25            0            5            US  9.659258e-01   \n864871            28            3            8            US  8.660254e-01   \n890969            30            5            2            US  5.000000e-01   \n1276881            1            4            2            US  5.000000e-01   \n...              ...          ...          ...           ...           ...   \n528496            21            2           12            US  1.224647e-16   \n776323            30            4            7            US  9.659258e-01   \n283655             9            4            5            US  9.659258e-01   \n662391            22            3           14            US -5.000000e-01   \n566252             2            4           16            US -8.660254e-01   \n\n           hr_cos    dy_sin    dy_cos  \n268530   0.965926 -0.433884 -0.900969  \n1041792  0.258819  0.000000  1.000000  \n864871  -0.500000  0.433884 -0.900969  \n890969   0.866025 -0.974928 -0.222521  \n1276881  0.866025 -0.433884 -0.900969  \n...           ...       ...       ...  \n528496  -1.000000  0.974928 -0.222521  \n776323  -0.258819 -0.433884 -0.900969  \n283655   0.258819 -0.433884 -0.900969  \n662391  -0.866025  0.433884 -0.900969  \n566252  -0.500000 -0.433884 -0.900969  \n\n[24000 rows x 32 columns]",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>vendorID</th>\n      <th>lpepPickupDatetime</th>\n      <th>lpepDropoffDatetime</th>\n      <th>passengerCount</th>\n      <th>tripDistance</th>\n      <th>puLocationId</th>\n      <th>doLocationId</th>\n      <th>pickupLongitude</th>\n      <th>pickupLatitude</th>\n      <th>dropoffLongitude</th>\n      <th>...</th>\n      <th>tripType</th>\n      <th>month_num</th>\n      <th>day_of_month</th>\n      <th>day_of_week</th>\n      <th>hour_of_day</th>\n      <th>country_code</th>\n      <th>hr_sin</th>\n      <th>hr_cos</th>\n      <th>dy_sin</th>\n      <th>dy_cos</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>268530</th>\n      <td>2</td>\n      <td>2016-01-22 01:35:28</td>\n      <td>2016-01-22 01:37:08</td>\n      <td>1</td>\n      <td>0.64</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.940681</td>\n      <td>40.814182</td>\n      <td>-73.936745</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>1</td>\n      <td>22</td>\n      <td>4</td>\n      <td>1</td>\n      <td>US</td>\n      <td>2.588190e-01</td>\n      <td>0.965926</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n    </tr>\n    <tr>\n      <th>1041792</th>\n      <td>2</td>\n      <td>2016-01-25 05:05:05</td>\n      <td>2016-01-25 05:13:26</td>\n      <td>1</td>\n      <td>1.49</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.918732</td>\n      <td>40.742962</td>\n      <td>-73.899055</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>1</td>\n      <td>25</td>\n      <td>0</td>\n      <td>5</td>\n      <td>US</td>\n      <td>9.659258e-01</td>\n      <td>0.258819</td>\n      <td>0.000000</td>\n      <td>1.000000</td>\n    </tr>\n    <tr>\n      <th>864871</th>\n      <td>2</td>\n      <td>2016-01-28 08:33:53</td>\n      <td>2016-01-28 08:39:30</td>\n      <td>1</td>\n      <td>0.80</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.911766</td>\n      <td>40.767883</td>\n      <td>-73.919769</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>1</td>\n      <td>28</td>\n      <td>3</td>\n      <td>8</td>\n      <td>US</td>\n      <td>8.660254e-01</td>\n      <td>-0.500000</td>\n      <td>0.433884</td>\n      <td>-0.900969</td>\n    </tr>\n    <tr>\n      <th>890969</th>\n      <td>2</td>\n      <td>2016-01-30 02:41:06</td>\n      <td>2016-01-30 02:52:42</td>\n      <td>1</td>\n      <td>3.09</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.981056</td>\n      <td>40.685444</td>\n      <td>-74.010765</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>1</td>\n      <td>30</td>\n      <td>5</td>\n      <td>2</td>\n      <td>US</td>\n      <td>5.000000e-01</td>\n      <td>0.866025</td>\n      <td>-0.974928</td>\n      <td>-0.222521</td>\n    </tr>\n    <tr>\n      <th>1276881</th>\n      <td>2</td>\n      <td>2016-01-01 02:27:13</td>\n      <td>2016-01-01 02:31:57</td>\n      <td>1</td>\n      <td>1.17</td>\n      <td>None</td>\n      <td>None</td>\n      <td>-73.951233</td>\n      <td>40.812218</td>\n      <td>-73.944069</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>1</td>\n      <td>1</td>\n      <td>4</td>\n      <td>2</td>\n      <td>US</td>\n      <td>5.000000e-01</td>\n      <td>0.866025</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n    </tr>\n    <tr>\n      <th>...</th>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n    </tr>\n    <tr>\n      <th>528496</th>\n      <td>2</td>\n      <td>2016-12-21 12:05:39</td>\n      <td>2016-12-21 12:17:03</td>\n      <td>1</td>\n      <td>1.78</td>\n      <td>247</td>\n      <td>119</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>12</td>\n      <td>21</td>\n      <td>2</td>\n      <td>12</td>\n      <td>US</td>\n      <td>1.224647e-16</td>\n      <td>-1.000000</td>\n      <td>0.974928</td>\n      <td>-0.222521</td>\n    </tr>\n    <tr>\n      <th>776323</th>\n      <td>2</td>\n      <td>2016-12-30 07:08:14</td>\n      <td>2016-12-30 07:08:33</td>\n      <td>1</td>\n      <td>0.02</td>\n      <td>42</td>\n      <td>42</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>12</td>\n      <td>30</td>\n      <td>4</td>\n      <td>7</td>\n      <td>US</td>\n      <td>9.659258e-01</td>\n      <td>-0.258819</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n    </tr>\n    <tr>\n      <th>283655</th>\n      <td>2</td>\n      <td>2016-12-09 05:27:45</td>\n      <td>2016-12-09 05:33:38</td>\n      <td>2</td>\n      <td>3.46</td>\n      <td>223</td>\n      <td>138</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>12</td>\n      <td>9</td>\n      <td>4</td>\n      <td>5</td>\n      <td>US</td>\n      <td>9.659258e-01</td>\n      <td>0.258819</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n    </tr>\n    <tr>\n      <th>662391</th>\n      <td>2</td>\n      <td>2016-12-22 14:02:57</td>\n      <td>2016-12-22 14:08:15</td>\n      <td>1</td>\n      <td>2.30</td>\n      <td>223</td>\n      <td>70</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>12</td>\n      <td>22</td>\n      <td>3</td>\n      <td>14</td>\n      <td>US</td>\n      <td>-5.000000e-01</td>\n      <td>-0.866025</td>\n      <td>0.433884</td>\n      <td>-0.900969</td>\n    </tr>\n    <tr>\n      <th>566252</th>\n      <td>2</td>\n      <td>2016-12-02 16:19:33</td>\n      <td>2016-12-02 16:24:25</td>\n      <td>1</td>\n      <td>1.05</td>\n      <td>157</td>\n      <td>80</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>...</td>\n      <td>1.0</td>\n      <td>12</td>\n      <td>2</td>\n      <td>4</td>\n      <td>16</td>\n      <td>US</td>\n      <td>-8.660254e-01</td>\n      <td>-0.500000</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n    </tr>\n  </tbody>\n</table>\n<p>24000 rows × 32 columns</p>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 3,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Remove some of the columns that you won't need for modeling or additional feature building. Rename the time field for pickup time, and additionally convert the time to midnight using `pandas.Series.dt.normalize`. This is done to all time features so that the datetime column can be later used as a key when joining datasets together at a daily level of granularity."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "columns_to_remove = [\"lpepDropoffDatetime\", \"puLocationId\", \"doLocationId\", \"extra\", \"mtaTax\",\n",
+        "                     \"improvementSurcharge\", \"tollsAmount\", \"ehailFee\", \"tripType\", \"rateCodeID\", \n",
+        "                     \"storeAndFwdFlag\", \"paymentType\", \"fareAmount\", \"tipAmount\"]\n",
+        "\n",
+        "green_taxi_df.drop(columns_to_remove, axis=1, inplace=True)\n",
+        "\n",
+        "green_taxi_df[\"datetime\"] = green_taxi_df[\"lpepPickupDatetime\"].dt.normalize()\n",
+        "green_taxi_df.head(5)"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 4,
+          "data": {
+            "text/plain": "         vendorID  lpepPickupDatetime  passengerCount  tripDistance  \\\n268530          2 2016-01-22 01:35:28               1          0.64   \n1041792         2 2016-01-25 05:05:05               1          1.49   \n864871          2 2016-01-28 08:33:53               1          0.80   \n890969          2 2016-01-30 02:41:06               1          3.09   \n1276881         2 2016-01-01 02:27:13               1          1.17   \n\n         pickupLongitude  pickupLatitude  dropoffLongitude  dropoffLatitude  \\\n268530        -73.940681       40.814182        -73.936745        40.822666   \n1041792       -73.918732       40.742962        -73.899055        40.735161   \n864871        -73.911766       40.767883        -73.919769        40.758121   \n890969        -73.981056       40.685444        -74.010765        40.713284   \n1276881       -73.951233       40.812218        -73.944069        40.823978   \n\n         totalAmount  month_num  day_of_month  day_of_week  hour_of_day  \\\n268530          5.30          1            22            4            1   \n1041792         9.30          1            25            0            5   \n864871          7.56          1            28            3            8   \n890969         15.96          1            30            5            2   \n1276881         8.76          1             1            4            2   \n\n        country_code    hr_sin    hr_cos    dy_sin    dy_cos   datetime  \n268530            US  0.258819  0.965926 -0.433884 -0.900969 2016-01-22  \n1041792           US  0.965926  0.258819  0.000000  1.000000 2016-01-25  \n864871            US  0.866025 -0.500000  0.433884 -0.900969 2016-01-28  \n890969            US  0.500000  0.866025 -0.974928 -0.222521 2016-01-30  \n1276881           US  0.500000  0.866025 -0.433884 -0.900969 2016-01-01  ",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>vendorID</th>\n      <th>lpepPickupDatetime</th>\n      <th>passengerCount</th>\n      <th>tripDistance</th>\n      <th>pickupLongitude</th>\n      <th>pickupLatitude</th>\n      <th>dropoffLongitude</th>\n      <th>dropoffLatitude</th>\n      <th>totalAmount</th>\n      <th>month_num</th>\n      <th>day_of_month</th>\n      <th>day_of_week</th>\n      <th>hour_of_day</th>\n      <th>country_code</th>\n      <th>hr_sin</th>\n      <th>hr_cos</th>\n      <th>dy_sin</th>\n      <th>dy_cos</th>\n      <th>datetime</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>268530</th>\n      <td>2</td>\n      <td>2016-01-22 01:35:28</td>\n      <td>1</td>\n      <td>0.64</td>\n      <td>-73.940681</td>\n      <td>40.814182</td>\n      <td>-73.936745</td>\n      <td>40.822666</td>\n      <td>5.30</td>\n      <td>1</td>\n      <td>22</td>\n      <td>4</td>\n      <td>1</td>\n      <td>US</td>\n      <td>0.258819</td>\n      <td>0.965926</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n      <td>2016-01-22</td>\n    </tr>\n    <tr>\n      <th>1041792</th>\n      <td>2</td>\n      <td>2016-01-25 05:05:05</td>\n      <td>1</td>\n      <td>1.49</td>\n      <td>-73.918732</td>\n      <td>40.742962</td>\n      <td>-73.899055</td>\n      <td>40.735161</td>\n      <td>9.30</td>\n      <td>1</td>\n      <td>25</td>\n      <td>0</td>\n      <td>5</td>\n      <td>US</td>\n      <td>0.965926</td>\n      <td>0.258819</td>\n      <td>0.000000</td>\n      <td>1.000000</td>\n      <td>2016-01-25</td>\n    </tr>\n    <tr>\n      <th>864871</th>\n      <td>2</td>\n      <td>2016-01-28 08:33:53</td>\n      <td>1</td>\n      <td>0.80</td>\n      <td>-73.911766</td>\n      <td>40.767883</td>\n      <td>-73.919769</td>\n      <td>40.758121</td>\n      <td>7.56</td>\n      <td>1</td>\n      <td>28</td>\n      <td>3</td>\n      <td>8</td>\n      <td>US</td>\n      <td>0.866025</td>\n      <td>-0.500000</td>\n      <td>0.433884</td>\n      <td>-0.900969</td>\n      <td>2016-01-28</td>\n    </tr>\n    <tr>\n      <th>890969</th>\n      <td>2</td>\n      <td>2016-01-30 02:41:06</td>\n      <td>1</td>\n      <td>3.09</td>\n      <td>-73.981056</td>\n      <td>40.685444</td>\n      <td>-74.010765</td>\n      <td>40.713284</td>\n      <td>15.96</td>\n      <td>1</td>\n      <td>30</td>\n      <td>5</td>\n      <td>2</td>\n      <td>US</td>\n      <td>0.500000</td>\n      <td>0.866025</td>\n      <td>-0.974928</td>\n      <td>-0.222521</td>\n      <td>2016-01-30</td>\n    </tr>\n    <tr>\n      <th>1276881</th>\n      <td>2</td>\n      <td>2016-01-01 02:27:13</td>\n      <td>1</td>\n      <td>1.17</td>\n      <td>-73.951233</td>\n      <td>40.812218</td>\n      <td>-73.944069</td>\n      <td>40.823978</td>\n      <td>8.76</td>\n      <td>1</td>\n      <td>1</td>\n      <td>4</td>\n      <td>2</td>\n      <td>US</td>\n      <td>0.500000</td>\n      <td>0.866025</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n      <td>2016-01-01</td>\n    </tr>\n  </tbody>\n</table>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 4,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "### Enrich with Holiday Data\n",
+        "\n",
+        "Now that the taxi data is downloaded and roughly prepared, add in holiday data as additional features. Holiday-specific features will assist model accuracy, as major holidays are times where taxi demand increases dramatically and supply becomes limited. The holiday dataset is relatively small, so fetch the full set by using the `PublicHolidays` class constructor with no parameters for filtering. Preview the data to check the format."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.opendatasets import PublicHolidays\n",
+        "\n",
+        "# call default constructor to download full dataset\n",
+        "holidays_df = PublicHolidays().to_pandas_dataframe()\n",
+        "holidays_df.head(5)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "[Info] read from /tmp/tmp7u3diqv_/https%3A/%2Fazureopendatastorage.azurefd.net/holidaydatacontainer/Processed/part-00000-tid-8468414522853579044-35925ba8-a227-4b80-9c89-17065e7bf1db-649-c000.snappy.parquet\n"
+        },
+        {
+          "output_type": "execute_result",
+          "execution_count": 5,
+          "data": {
+            "text/plain": "      countryOrRegion                 holidayName        normalizeHolidayName  \\\n19375       Argentina  Año Nuevo [New Year's Day]  Año Nuevo [New Year's Day]   \n19376       Australia              New Year's Day              New Year's Day   \n19377         Austria                     Neujahr                     Neujahr   \n19378         Belarus                   Новый год                   Новый год   \n19379         Belgium               Nieuwjaarsdag               Nieuwjaarsdag   \n\n      isPaidTimeOff countryRegionCode       date  \n19375          None                AR 2008-01-01  \n19376          None                AU 2008-01-01  \n19377          None                AT 2008-01-01  \n19378          None                BY 2008-01-01  \n19379          None                BE 2008-01-01  ",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>countryOrRegion</th>\n      <th>holidayName</th>\n      <th>normalizeHolidayName</th>\n      <th>isPaidTimeOff</th>\n      <th>countryRegionCode</th>\n      <th>date</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>19375</th>\n      <td>Argentina</td>\n      <td>Año Nuevo [New Year's Day]</td>\n      <td>Año Nuevo [New Year's Day]</td>\n      <td>None</td>\n      <td>AR</td>\n      <td>2008-01-01</td>\n    </tr>\n    <tr>\n      <th>19376</th>\n      <td>Australia</td>\n      <td>New Year's Day</td>\n      <td>New Year's Day</td>\n      <td>None</td>\n      <td>AU</td>\n      <td>2008-01-01</td>\n    </tr>\n    <tr>\n      <th>19377</th>\n      <td>Austria</td>\n      <td>Neujahr</td>\n      <td>Neujahr</td>\n      <td>None</td>\n      <td>AT</td>\n      <td>2008-01-01</td>\n    </tr>\n    <tr>\n      <th>19378</th>\n      <td>Belarus</td>\n      <td>Новый год</td>\n      <td>Новый год</td>\n      <td>None</td>\n      <td>BY</td>\n      <td>2008-01-01</td>\n    </tr>\n    <tr>\n      <th>19379</th>\n      <td>Belgium</td>\n      <td>Nieuwjaarsdag</td>\n      <td>Nieuwjaarsdag</td>\n      <td>None</td>\n      <td>BE</td>\n      <td>2008-01-01</td>\n    </tr>\n  </tbody>\n</table>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 5,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Rename the `countryRegionCode` and `date` columns to match the respective field names from the taxi data, and also normalize the time so it can be used as a key. Next, join the holiday data with the taxi data by performing a left-join using the Pandas `merge()` function. This will preserve all records from `green_taxi_df`, but add in holiday data where it exists for the corresponding `datetime` and `country_code`, which in this case is always `\\\"US\\\"`. Preview the data to verify that they were merged correctly."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "holidays_df = holidays_df.rename(columns={\"countryRegionCode\": \"country_code\"})\n",
+        "holidays_df[\"datetime\"] = holidays_df[\"date\"].dt.normalize()\n",
+        "\n",
+        "holidays_df.drop([\"countryOrRegion\", \"holidayName\", \"date\"], axis=1, inplace=True)\n",
+        "\n",
+        "taxi_holidays_df = pd.merge(green_taxi_df, holidays_df, how=\"left\", on=[\"datetime\", \"country_code\"])\n",
+        "taxi_holidays_df[taxi_holidays_df[\"normalizeHolidayName\"].notnull()]"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 6,
+          "data": {
+            "text/plain": "       vendorID  lpepPickupDatetime  passengerCount  tripDistance  \\\n4             2 2016-01-01 02:27:13               1          1.17   \n49            1 2016-01-01 01:12:33               1          4.20   \n65            2 2016-01-18 01:01:24               1          6.05   \n83            2 2016-01-18 10:56:33               1          1.91   \n96            2 2016-01-01 02:35:37               2         12.46   \n...         ...                 ...             ...           ...   \n23830         2 2016-12-26 19:17:15               1          1.09   \n23840         2 2016-12-25 17:37:54               1          0.33   \n23862         1 2016-12-26 22:09:26               2          2.50   \n23942         1 2016-12-26 21:43:24               1          2.90   \n23987         2 2016-12-25 01:11:15               1          2.68   \n\n       pickupLongitude  pickupLatitude  dropoffLongitude  dropoffLatitude  \\\n4           -73.951233       40.812218        -73.944069        40.823978   \n49          -73.963615       40.676476        -73.954308        40.710587   \n65          -73.804321       40.707272        -73.783134        40.644516   \n83          -73.936600       40.820545        -73.914146        40.805531   \n96          -74.014740       40.644218        -73.950340        40.775352   \n...                ...             ...               ...              ...   \n23830              NaN             NaN               NaN              NaN   \n23840              NaN             NaN               NaN              NaN   \n23862              NaN             NaN               NaN              NaN   \n23942              NaN             NaN               NaN              NaN   \n23987              NaN             NaN               NaN              NaN   \n\n       totalAmount  month_num  ...  day_of_week  hour_of_day  country_code  \\\n4             8.76          1  ...            4            2            US   \n49           21.60          1  ...            4            1            US   \n65           19.30          1  ...            0            1            US   \n83           10.30          1  ...            0           10            US   \n96           38.30          1  ...            4            2            US   \n...            ...        ...  ...          ...          ...           ...   \n23830         8.50         12  ...            0           19            US   \n23840         4.30         12  ...            6           17            US   \n23862        14.80         12  ...            0           22            US   \n23942        13.30         12  ...            0           21            US   \n23987        11.80         12  ...            6            1            US   \n\n         hr_sin    hr_cos    dy_sin    dy_cos   datetime  \\\n4      0.500000  0.866025 -0.433884 -0.900969 2016-01-01   \n49     0.258819  0.965926 -0.433884 -0.900969 2016-01-01   \n65     0.258819  0.965926  0.000000  1.000000 2016-01-18   \n83     0.500000 -0.866025  0.000000  1.000000 2016-01-18   \n96     0.500000  0.866025 -0.433884 -0.900969 2016-01-01   \n...         ...       ...       ...       ...        ...   \n23830 -0.965926  0.258819  0.000000  1.000000 2016-12-26   \n23840 -0.965926 -0.258819 -0.781831  0.623490 2016-12-25   \n23862 -0.500000  0.866025  0.000000  1.000000 2016-12-26   \n23942 -0.707107  0.707107  0.000000  1.000000 2016-12-26   \n23987  0.258819  0.965926 -0.781831  0.623490 2016-12-25   \n\n             normalizeHolidayName isPaidTimeOff  \n4                  New Year's Day          True  \n49                 New Year's Day          True  \n65     Martin Luther King Jr. Day          None  \n83     Martin Luther King Jr. Day          None  \n96                 New Year's Day          True  \n...                           ...           ...  \n23830               Christmas Day          True  \n23840               Christmas Day          True  \n23862               Christmas Day          True  \n23942               Christmas Day          True  \n23987               Christmas Day          True  \n\n[624 rows x 21 columns]",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>vendorID</th>\n      <th>lpepPickupDatetime</th>\n      <th>passengerCount</th>\n      <th>tripDistance</th>\n      <th>pickupLongitude</th>\n      <th>pickupLatitude</th>\n      <th>dropoffLongitude</th>\n      <th>dropoffLatitude</th>\n      <th>totalAmount</th>\n      <th>month_num</th>\n      <th>...</th>\n      <th>day_of_week</th>\n      <th>hour_of_day</th>\n      <th>country_code</th>\n      <th>hr_sin</th>\n      <th>hr_cos</th>\n      <th>dy_sin</th>\n      <th>dy_cos</th>\n      <th>datetime</th>\n      <th>normalizeHolidayName</th>\n      <th>isPaidTimeOff</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>4</th>\n      <td>2</td>\n      <td>2016-01-01 02:27:13</td>\n      <td>1</td>\n      <td>1.17</td>\n      <td>-73.951233</td>\n      <td>40.812218</td>\n      <td>-73.944069</td>\n      <td>40.823978</td>\n      <td>8.76</td>\n      <td>1</td>\n      <td>...</td>\n      <td>4</td>\n      <td>2</td>\n      <td>US</td>\n      <td>0.500000</td>\n      <td>0.866025</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n      <td>2016-01-01</td>\n      <td>New Year's Day</td>\n      <td>True</td>\n    </tr>\n    <tr>\n      <th>49</th>\n      <td>1</td>\n      <td>2016-01-01 01:12:33</td>\n      <td>1</td>\n      <td>4.20</td>\n      <td>-73.963615</td>\n      <td>40.676476</td>\n      <td>-73.954308</td>\n      <td>40.710587</td>\n      <td>21.60</td>\n      <td>1</td>\n      <td>...</td>\n      <td>4</td>\n      <td>1</td>\n      <td>US</td>\n      <td>0.258819</td>\n      <td>0.965926</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n      <td>2016-01-01</td>\n      <td>New Year's Day</td>\n      <td>True</td>\n    </tr>\n    <tr>\n      <th>65</th>\n      <td>2</td>\n      <td>2016-01-18 01:01:24</td>\n      <td>1</td>\n      <td>6.05</td>\n      <td>-73.804321</td>\n      <td>40.707272</td>\n      <td>-73.783134</td>\n      <td>40.644516</td>\n      <td>19.30</td>\n      <td>1</td>\n      <td>...</td>\n      <td>0</td>\n      <td>1</td>\n      <td>US</td>\n      <td>0.258819</td>\n      <td>0.965926</td>\n      <td>0.000000</td>\n      <td>1.000000</td>\n      <td>2016-01-18</td>\n      <td>Martin Luther King Jr. Day</td>\n      <td>None</td>\n    </tr>\n    <tr>\n      <th>83</th>\n      <td>2</td>\n      <td>2016-01-18 10:56:33</td>\n      <td>1</td>\n      <td>1.91</td>\n      <td>-73.936600</td>\n      <td>40.820545</td>\n      <td>-73.914146</td>\n      <td>40.805531</td>\n      <td>10.30</td>\n      <td>1</td>\n      <td>...</td>\n      <td>0</td>\n      <td>10</td>\n      <td>US</td>\n      <td>0.500000</td>\n      <td>-0.866025</td>\n      <td>0.000000</td>\n      <td>1.000000</td>\n      <td>2016-01-18</td>\n      <td>Martin Luther King Jr. Day</td>\n      <td>None</td>\n    </tr>\n    <tr>\n      <th>96</th>\n      <td>2</td>\n      <td>2016-01-01 02:35:37</td>\n      <td>2</td>\n      <td>12.46</td>\n      <td>-74.014740</td>\n      <td>40.644218</td>\n      <td>-73.950340</td>\n      <td>40.775352</td>\n      <td>38.30</td>\n      <td>1</td>\n      <td>...</td>\n      <td>4</td>\n      <td>2</td>\n      <td>US</td>\n      <td>0.500000</td>\n      <td>0.866025</td>\n      <td>-0.433884</td>\n      <td>-0.900969</td>\n      <td>2016-01-01</td>\n      <td>New Year's Day</td>\n      <td>True</td>\n    </tr>\n    <tr>\n      <th>...</th>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n    </tr>\n    <tr>\n      <th>23830</th>\n      <td>2</td>\n      <td>2016-12-26 19:17:15</td>\n      <td>1</td>\n      <td>1.09</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>8.50</td>\n      <td>12</td>\n      <td>...</td>\n      <td>0</td>\n      <td>19</td>\n      <td>US</td>\n      <td>-0.965926</td>\n      <td>0.258819</td>\n      <td>0.000000</td>\n      <td>1.000000</td>\n      <td>2016-12-26</td>\n      <td>Christmas Day</td>\n      <td>True</td>\n    </tr>\n    <tr>\n      <th>23840</th>\n      <td>2</td>\n      <td>2016-12-25 17:37:54</td>\n      <td>1</td>\n      <td>0.33</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>4.30</td>\n      <td>12</td>\n      <td>...</td>\n      <td>6</td>\n      <td>17</td>\n      <td>US</td>\n      <td>-0.965926</td>\n      <td>-0.258819</td>\n      <td>-0.781831</td>\n      <td>0.623490</td>\n      <td>2016-12-25</td>\n      <td>Christmas Day</td>\n      <td>True</td>\n    </tr>\n    <tr>\n      <th>23862</th>\n      <td>1</td>\n      <td>2016-12-26 22:09:26</td>\n      <td>2</td>\n      <td>2.50</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>14.80</td>\n      <td>12</td>\n      <td>...</td>\n      <td>0</td>\n      <td>22</td>\n      <td>US</td>\n      <td>-0.500000</td>\n      <td>0.866025</td>\n      <td>0.000000</td>\n      <td>1.000000</td>\n      <td>2016-12-26</td>\n      <td>Christmas Day</td>\n      <td>True</td>\n    </tr>\n    <tr>\n      <th>23942</th>\n      <td>1</td>\n      <td>2016-12-26 21:43:24</td>\n      <td>1</td>\n      <td>2.90</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>13.30</td>\n      <td>12</td>\n      <td>...</td>\n      <td>0</td>\n      <td>21</td>\n      <td>US</td>\n      <td>-0.707107</td>\n      <td>0.707107</td>\n      <td>0.000000</td>\n      <td>1.000000</td>\n      <td>2016-12-26</td>\n      <td>Christmas Day</td>\n      <td>True</td>\n    </tr>\n    <tr>\n      <th>23987</th>\n      <td>2</td>\n      <td>2016-12-25 01:11:15</td>\n      <td>1</td>\n      <td>2.68</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>NaN</td>\n      <td>11.80</td>\n      <td>12</td>\n      <td>...</td>\n      <td>6</td>\n      <td>1</td>\n      <td>US</td>\n      <td>0.258819</td>\n      <td>0.965926</td>\n      <td>-0.781831</td>\n      <td>0.623490</td>\n      <td>2016-12-25</td>\n      <td>Christmas Day</td>\n      <td>True</td>\n    </tr>\n  </tbody>\n</table>\n<p>624 rows × 21 columns</p>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 6,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "### Enrich with weather data\n",
+        "\n",
+        "Now NOAA surface weather data can be appended to the taxi and holiday data. Use a similar approach to fetch the weather data by downloading one month at a time iteratively. Additionally, specify the `cols` parameter with an array of strings to filter the columns to download. This is a very large dataset containing weather surface data from all over the world, so before appending each month, filter the lat/long fields to near NYC using the `query()` function on the dataframe. This will ensure the `weather_df` doesn't get too large."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.opendatasets import NoaaIsdWeather\n",
+        "start = datetime.strptime(\"1/1/2016\",\"%m/%d/%Y\")\n",
+        "end = datetime.strptime(\"1/31/2016\",\"%m/%d/%Y\")\n",
+        "\n",
+        "weather_df = pd.concat([NoaaIsdWeather(cols=[\"temperature\", \"precipTime\", \"precipDepth\"], start_date=start + relativedelta(months=x), end_date=end + relativedelta(months=x))\\\n",
+        "        .to_pandas_dataframe().query(\"latitude>=40.53 and latitude<=40.88 and longitude>=-74.09 and longitude<=-73.72 and temperature==temperature\") for x in range(12)])"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "[Info] read from /tmp/tmphrorarrn/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=1/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-1.c000.snappy.parquet\n[Info] read from /tmp/tmphrorarrn/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=1/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-1.c000.snappy.parquet\n[Info] read from /tmp/tmphrorarrn/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=1/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-1.c000.snappy.parquet\n[Info] read from /tmp/tmphrorarrn/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=1/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-1.c000.snappy.parquet\n[Info] read from /tmp/tmphrorarrn/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=1/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-1.c000.snappy.parquet\n[Info] read from /tmp/tmphrorarrn/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=1/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-1.c000.snappy.parquet\n[Info] read from /tmp/tmphrorarrn/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=1/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-1.c000.snappy.parquet\n[Info] read from /tmp/tmphrorarrn/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=1/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-1.c000.snappy.parquet\n[Info] read from /tmp/tmpd4d0wyjc/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=2/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-2.c000.snappy.parquet\n[Info] read from /tmp/tmpd4d0wyjc/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=2/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-2.c000.snappy.parquet\n[Info] read from /tmp/tmpd4d0wyjc/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=2/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-2.c000.snappy.parquet\n[Info] read from /tmp/tmpd4d0wyjc/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=2/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-2.c000.snappy.parquet\n[Info] read from /tmp/tmpd4d0wyjc/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=2/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-2.c000.snappy.parquet\n[Info] read from /tmp/tmpd4d0wyjc/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=2/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-2.c000.snappy.parquet\n[Info] read from /tmp/tmpd4d0wyjc/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=2/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-2.c000.snappy.parquet\n[Info] read from /tmp/tmpd4d0wyjc/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=2/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-2.c000.snappy.parquet\n[Info] read from /tmp/tmpwccg1qej/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=3/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-3.c000.snappy.parquet\n[Info] read from /tmp/tmpwccg1qej/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=3/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-3.c000.snappy.parquet\n[Info] read from /tmp/tmpwccg1qej/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=3/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-3.c000.snappy.parquet\n[Info] read from /tmp/tmpwccg1qej/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=3/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-3.c000.snappy.parquet\n[Info] read from /tmp/tmpwccg1qej/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=3/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-3.c000.snappy.parquet\n[Info] read from /tmp/tmpwccg1qej/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=3/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-3.c000.snappy.parquet\n[Info] read from /tmp/tmpwccg1qej/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=3/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-3.c000.snappy.parquet\n[Info] read from /tmp/tmpwccg1qej/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=3/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-3.c000.snappy.parquet\n[Info] read from /tmp/tmpc5rge10f/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=4/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-4.c000.snappy.parquet\n[Info] read from /tmp/tmpc5rge10f/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=4/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-4.c000.snappy.parquet\n[Info] read from /tmp/tmpc5rge10f/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=4/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-4.c000.snappy.parquet\n[Info] read from /tmp/tmpc5rge10f/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=4/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-4.c000.snappy.parquet\n[Info] read from /tmp/tmpc5rge10f/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=4/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-4.c000.snappy.parquet\n[Info] read from /tmp/tmpc5rge10f/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=4/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-4.c000.snappy.parquet\n[Info] read from /tmp/tmpc5rge10f/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=4/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-4.c000.snappy.parquet\n[Info] read from /tmp/tmpc5rge10f/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=4/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-4.c000.snappy.parquet\n[Info] read from /tmp/tmpwr90mi74/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=5/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-5.c000.snappy.parquet\n[Info] read from /tmp/tmpwr90mi74/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=5/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-5.c000.snappy.parquet\n[Info] read from /tmp/tmpwr90mi74/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=5/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-5.c000.snappy.parquet\n[Info] read from /tmp/tmpwr90mi74/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=5/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-5.c000.snappy.parquet\n[Info] read from /tmp/tmpwr90mi74/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=5/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-5.c000.snappy.parquet\n[Info] read from /tmp/tmpwr90mi74/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=5/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-5.c000.snappy.parquet\n[Info] read from /tmp/tmpwr90mi74/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=5/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-5.c000.snappy.parquet\n[Info] read from /tmp/tmpwr90mi74/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=5/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-5.c000.snappy.parquet\n[Info] read from /tmp/tmpzv1v0s0r/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=6/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-6.c000.snappy.parquet\n[Info] read from /tmp/tmpzv1v0s0r/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=6/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-6.c000.snappy.parquet\n[Info] read from /tmp/tmpzv1v0s0r/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=6/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-6.c000.snappy.parquet\n[Info] read from /tmp/tmpzv1v0s0r/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=6/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-6.c000.snappy.parquet\n[Info] read from /tmp/tmpzv1v0s0r/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=6/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-6.c000.snappy.parquet\n[Info] read from /tmp/tmpzv1v0s0r/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=6/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-6.c000.snappy.parquet\n[Info] read from /tmp/tmpzv1v0s0r/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=6/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-6.c000.snappy.parquet\n[Info] read from /tmp/tmpzv1v0s0r/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=6/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-6.c000.snappy.parquet\n[Info] read from /tmp/tmpf5jzykf8/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=7/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-7.c000.snappy.parquet\n[Info] read from /tmp/tmpf5jzykf8/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=7/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-7.c000.snappy.parquet\n[Info] read from /tmp/tmpf5jzykf8/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=7/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-7.c000.snappy.parquet\n[Info] read from /tmp/tmpf5jzykf8/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=7/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-7.c000.snappy.parquet\n[Info] read from /tmp/tmpf5jzykf8/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=7/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-7.c000.snappy.parquet\n[Info] read from /tmp/tmpf5jzykf8/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=7/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-7.c000.snappy.parquet\n[Info] read from /tmp/tmpf5jzykf8/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=7/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-7.c000.snappy.parquet\n[Info] read from /tmp/tmpf5jzykf8/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=7/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-7.c000.snappy.parquet\n[Info] read from /tmp/tmp98a9pbbi/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=8/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-8.c000.snappy.parquet\n[Info] read from /tmp/tmp98a9pbbi/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=8/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-8.c000.snappy.parquet\n[Info] read from /tmp/tmp98a9pbbi/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=8/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-8.c000.snappy.parquet\n[Info] read from /tmp/tmp98a9pbbi/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=8/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-8.c000.snappy.parquet\n[Info] read from /tmp/tmp98a9pbbi/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=8/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-8.c000.snappy.parquet\n[Info] read from /tmp/tmp98a9pbbi/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=8/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-8.c000.snappy.parquet\n[Info] read from /tmp/tmp98a9pbbi/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=8/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-8.c000.snappy.parquet\n[Info] read from /tmp/tmp98a9pbbi/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=8/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-8.c000.snappy.parquet\n[Info] read from /tmp/tmpm_sgj_xg/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=9/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-9.c000.snappy.parquet\n[Info] read from /tmp/tmpm_sgj_xg/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=9/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-9.c000.snappy.parquet\n[Info] read from /tmp/tmpm_sgj_xg/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=9/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-9.c000.snappy.parquet\n[Info] read from /tmp/tmpm_sgj_xg/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=9/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-9.c000.snappy.parquet\n[Info] read from /tmp/tmpm_sgj_xg/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=9/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-9.c000.snappy.parquet\n[Info] read from /tmp/tmpm_sgj_xg/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=9/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-9.c000.snappy.parquet\n[Info] read from /tmp/tmpm_sgj_xg/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=9/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-9.c000.snappy.parquet\n[Info] read from /tmp/tmpm_sgj_xg/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=9/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-9.c000.snappy.parquet\n[Info] read from /tmp/tmpx86ij575/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=10/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-10.c000.snappy.parquet\n[Info] read from /tmp/tmpx86ij575/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=10/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-10.c000.snappy.parquet\n[Info] read from /tmp/tmpx86ij575/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=10/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-10.c000.snappy.parquet\n[Info] read from /tmp/tmpx86ij575/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=10/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-10.c000.snappy.parquet\n[Info] read from /tmp/tmpx86ij575/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=10/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-10.c000.snappy.parquet\n[Info] read from /tmp/tmpx86ij575/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=10/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-10.c000.snappy.parquet\n[Info] read from /tmp/tmpx86ij575/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=10/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-10.c000.snappy.parquet\n[Info] read from /tmp/tmpx86ij575/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=10/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-10.c000.snappy.parquet\n[Info] read from /tmp/tmpizl5rzdk/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=11/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-11.c000.snappy.parquet\n[Info] read from /tmp/tmpizl5rzdk/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=11/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-11.c000.snappy.parquet\n[Info] read from /tmp/tmpizl5rzdk/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=11/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-11.c000.snappy.parquet\n[Info] read from /tmp/tmpizl5rzdk/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=11/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-11.c000.snappy.parquet\n[Info] read from /tmp/tmpizl5rzdk/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=11/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-11.c000.snappy.parquet\n[Info] read from /tmp/tmpizl5rzdk/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=11/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-11.c000.snappy.parquet\n[Info] read from /tmp/tmpizl5rzdk/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=11/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-11.c000.snappy.parquet\n[Info] read from /tmp/tmpizl5rzdk/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=11/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-11.c000.snappy.parquet\n[Info] read from /tmp/tmp6qhfz47q/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=12/part-00000-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2623-12.c000.snappy.parquet\n[Info] read from /tmp/tmp6qhfz47q/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=12/part-00001-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2628-12.c000.snappy.parquet\n[Info] read from /tmp/tmp6qhfz47q/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=12/part-00002-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2622-12.c000.snappy.parquet\n[Info] read from /tmp/tmp6qhfz47q/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=12/part-00003-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2624-12.c000.snappy.parquet\n[Info] read from /tmp/tmp6qhfz47q/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=12/part-00004-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2629-12.c000.snappy.parquet\n[Info] read from /tmp/tmp6qhfz47q/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=12/part-00005-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2627-12.c000.snappy.parquet\n[Info] read from /tmp/tmp6qhfz47q/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=12/part-00006-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2625-12.c000.snappy.parquet\n[Info] read from /tmp/tmp6qhfz47q/https%3A/%2Fazureopendatastorage.azurefd.net/isdweatherdatacontainer/ISDWeather/year=2016/month=12/part-00007-tid-738723883827836859-85e0759b-51fa-4430-84ec-cb8ab6a57033-2626-12.c000.snappy.parquet\n"
+        }
+      ],
+      "execution_count": 7,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "weather_df"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 8,
+          "data": {
+            "text/plain": "         precipTime  latitude  precipDepth            datetime    usaf  \\\n204647          NaN    40.783          NaN 2016-01-02 03:00:00  725030   \n204670          1.0    40.779          0.0 2016-01-22 13:51:00  725030   \n204694          1.0    40.779          0.0 2016-01-08 02:51:00  725030   \n204701          1.0    40.779          0.0 2016-01-04 15:51:00  725030   \n204715          1.0    40.779          0.0 2016-01-01 21:51:00  725030   \n...             ...       ...          ...                 ...     ...   \n1248471         1.0    40.789          0.0 2016-12-23 13:51:00  725053   \n1248555         1.0    40.789          0.0 2016-12-12 13:51:00  725053   \n1248580         NaN    40.789          NaN 2016-12-18 07:01:00  725053   \n1248597         1.0    40.789          0.0 2016-12-25 00:51:00  725053   \n1248600         1.0    40.789          5.0 2016-12-17 11:10:00  725053   \n\n         longitude   wban  temperature  \n204647     -73.867  14732          2.8  \n204670     -73.880  14732         -4.4  \n204694     -73.880  14732          5.0  \n204701     -73.880  14732         -1.1  \n204715     -73.880  14732          4.4  \n...            ...    ...          ...  \n1248471    -73.967  94728          4.4  \n1248555    -73.967  94728          5.0  \n1248580    -73.967  94728          3.9  \n1248597    -73.967  94728          7.8  \n1248600    -73.967  94728         -2.8  \n\n[55683 rows x 8 columns]",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>precipTime</th>\n      <th>latitude</th>\n      <th>precipDepth</th>\n      <th>datetime</th>\n      <th>usaf</th>\n      <th>longitude</th>\n      <th>wban</th>\n      <th>temperature</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>204647</th>\n      <td>NaN</td>\n      <td>40.783</td>\n      <td>NaN</td>\n      <td>2016-01-02 03:00:00</td>\n      <td>725030</td>\n      <td>-73.867</td>\n      <td>14732</td>\n      <td>2.8</td>\n    </tr>\n    <tr>\n      <th>204670</th>\n      <td>1.0</td>\n      <td>40.779</td>\n      <td>0.0</td>\n      <td>2016-01-22 13:51:00</td>\n      <td>725030</td>\n      <td>-73.880</td>\n      <td>14732</td>\n      <td>-4.4</td>\n    </tr>\n    <tr>\n      <th>204694</th>\n      <td>1.0</td>\n      <td>40.779</td>\n      <td>0.0</td>\n      <td>2016-01-08 02:51:00</td>\n      <td>725030</td>\n      <td>-73.880</td>\n      <td>14732</td>\n      <td>5.0</td>\n    </tr>\n    <tr>\n      <th>204701</th>\n      <td>1.0</td>\n      <td>40.779</td>\n      <td>0.0</td>\n      <td>2016-01-04 15:51:00</td>\n      <td>725030</td>\n      <td>-73.880</td>\n      <td>14732</td>\n      <td>-1.1</td>\n    </tr>\n    <tr>\n      <th>204715</th>\n      <td>1.0</td>\n      <td>40.779</td>\n      <td>0.0</td>\n      <td>2016-01-01 21:51:00</td>\n      <td>725030</td>\n      <td>-73.880</td>\n      <td>14732</td>\n      <td>4.4</td>\n    </tr>\n    <tr>\n      <th>...</th>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n      <td>...</td>\n    </tr>\n    <tr>\n      <th>1248471</th>\n      <td>1.0</td>\n      <td>40.789</td>\n      <td>0.0</td>\n      <td>2016-12-23 13:51:00</td>\n      <td>725053</td>\n      <td>-73.967</td>\n      <td>94728</td>\n      <td>4.4</td>\n    </tr>\n    <tr>\n      <th>1248555</th>\n      <td>1.0</td>\n      <td>40.789</td>\n      <td>0.0</td>\n      <td>2016-12-12 13:51:00</td>\n      <td>725053</td>\n      <td>-73.967</td>\n      <td>94728</td>\n      <td>5.0</td>\n    </tr>\n    <tr>\n      <th>1248580</th>\n      <td>NaN</td>\n      <td>40.789</td>\n      <td>NaN</td>\n      <td>2016-12-18 07:01:00</td>\n      <td>725053</td>\n      <td>-73.967</td>\n      <td>94728</td>\n      <td>3.9</td>\n    </tr>\n    <tr>\n      <th>1248597</th>\n      <td>1.0</td>\n      <td>40.789</td>\n      <td>0.0</td>\n      <td>2016-12-25 00:51:00</td>\n      <td>725053</td>\n      <td>-73.967</td>\n      <td>94728</td>\n      <td>7.8</td>\n    </tr>\n    <tr>\n      <th>1248600</th>\n      <td>1.0</td>\n      <td>40.789</td>\n      <td>5.0</td>\n      <td>2016-12-17 11:10:00</td>\n      <td>725053</td>\n      <td>-73.967</td>\n      <td>94728</td>\n      <td>-2.8</td>\n    </tr>\n  </tbody>\n</table>\n<p>55683 rows × 8 columns</p>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 8,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Again call `pandas.Series.dt.normalize` on the `datetime` field in the weather data so it matches the time key in `taxi_holidays_df`.\n",
+        "\n",
+        "\n",
+        "Next group the weather data to have daily aggregated weather values. Define a dict `aggregations` to define how to aggregate each field at a daily level. For`temperature` take the mean and for `precipTime` and `precipDepth` take the daily maximum. Use the `groupby()` function along with the aggregations to group the data. Preview the data to ensure there is one record per day."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "weather_df[\"datetime\"] = weather_df[\"datetime\"].dt.normalize()\n",
+        "\n",
+        "# group by datetime\n",
+        "aggregations = {\"precipTime\": \"max\", \"temperature\": \"mean\", \"precipDepth\": \"max\"}\n",
+        "weather_df_grouped = weather_df.groupby(\"datetime\").agg(aggregations)\n",
+        "weather_df_grouped.head(10)"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 9,
+          "data": {
+            "text/plain": "            precipTime  temperature  precipDepth\ndatetime                                        \n2016-01-01         1.0     5.197345          0.0\n2016-01-02         1.0     2.567857          0.0\n2016-01-03         1.0     3.846429          0.0\n2016-01-04         1.0     0.123894          0.0\n2016-01-05         6.0    -7.206250          0.0\n2016-01-06         6.0    -0.896396          0.0\n2016-01-07         6.0     3.180645          0.0\n2016-01-08         1.0     4.384091          0.0\n2016-01-09         6.0     6.710274          3.0\n2016-01-10        24.0    10.943655        254.0",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>precipTime</th>\n      <th>temperature</th>\n      <th>precipDepth</th>\n    </tr>\n    <tr>\n      <th>datetime</th>\n      <th></th>\n      <th></th>\n      <th></th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>2016-01-01</th>\n      <td>1.0</td>\n      <td>5.197345</td>\n      <td>0.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-02</th>\n      <td>1.0</td>\n      <td>2.567857</td>\n      <td>0.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-03</th>\n      <td>1.0</td>\n      <td>3.846429</td>\n      <td>0.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-04</th>\n      <td>1.0</td>\n      <td>0.123894</td>\n      <td>0.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-05</th>\n      <td>6.0</td>\n      <td>-7.206250</td>\n      <td>0.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-06</th>\n      <td>6.0</td>\n      <td>-0.896396</td>\n      <td>0.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-07</th>\n      <td>6.0</td>\n      <td>3.180645</td>\n      <td>0.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-08</th>\n      <td>1.0</td>\n      <td>4.384091</td>\n      <td>0.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-09</th>\n      <td>6.0</td>\n      <td>6.710274</td>\n      <td>3.0</td>\n    </tr>\n    <tr>\n      <th>2016-01-10</th>\n      <td>24.0</td>\n      <td>10.943655</td>\n      <td>254.0</td>\n    </tr>\n  </tbody>\n</table>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 9,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Note: The examples in this tutorial merge data using Pandas functions and custom aggregations, but the Open Datasets SDK has classes designed to easily merge and enrich data sets. See the [notebook](https://github.com/Azure/OpenDatasetsNotebooks/blob/master/tutorials/data-join/04-nyc-taxi-join-weather-in-pandas.ipynb) for code examples of these design patterns."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "### Cleanse data\n",
+        "\n",
+        "Merge the existing taxi and holiday data with the new weather data. This time `datetime` is the only key, and again perform a left-join of the data. Run the `describe()` function on the new dataframe to see summary statistics for each field."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "taxi_holidays_weather_df = pd.merge(taxi_holidays_df, weather_df_grouped, how=\"left\", on=[\"datetime\"])\n",
+        "taxi_holidays_weather_df.describe()"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 10,
+          "data": {
+            "text/plain": "           vendorID  passengerCount  tripDistance  pickupLongitude  \\\ncount  24000.000000    24000.000000  24000.000000     12000.000000   \nmean       1.789083        1.351458      2.771344       -73.860855   \nstd        0.407968        1.022976      2.812725         2.461782   \nmin        1.000000        0.000000      0.000000      -115.172615   \n25%        2.000000        1.000000      1.020000       -73.961561   \n50%        2.000000        1.000000      1.820000       -73.946957   \n75%        2.000000        1.000000      3.500000       -73.919552   \nmax        2.000000        8.000000     35.040000         0.000000   \n\n       pickupLatitude  dropoffLongitude  dropoffLatitude   totalAmount  \\\ncount    12000.000000      12000.000000     12000.000000  24000.000000   \nmean        40.702767        -73.834694        40.687242     14.589768   \nstd          1.342358          2.806899         1.534254     11.220269   \nmin          0.000000       -115.149498         0.000000    -65.000000   \n25%         40.694201        -73.968864        40.695167      7.850000   \n50%         40.746147        -73.945759        40.746536     11.300000   \n75%         40.802370        -73.913908        40.791056     17.300000   \nmax         40.920631          0.000000        41.030594    350.000000   \n\n          month_num  day_of_month   day_of_week   hour_of_day        hr_sin  \\\ncount  24000.000000  24000.000000  24000.000000  24000.000000  24000.000000   \nmean       6.500000     15.110458      3.229417     13.634625     -0.250167   \nstd        3.452124      8.442609      1.956620      6.675595      0.662128   \nmin        1.000000      1.000000      0.000000      0.000000     -1.000000   \n25%        3.750000      8.000000      2.000000      9.000000     -0.866025   \n50%        6.500000     15.000000      3.000000     15.000000     -0.500000   \n75%        9.250000     22.000000      5.000000     19.000000      0.258819   \nmax       12.000000     30.000000      6.000000     23.000000      1.000000   \n\n             hr_cos        dy_sin        dy_cos    precipTime   temperature  \\\ncount  2.400000e+04  24000.000000  24000.000000  24000.000000  24000.000000   \nmean  -2.053736e-02     -0.074602     -0.054395     13.302833     13.901122   \nstd    7.061302e-01      0.714403      0.693646     10.327326      9.488328   \nmin   -1.000000e+00     -0.974928     -0.900969      1.000000    -13.379464   \n25%   -7.071068e-01     -0.781831     -0.900969      6.000000      6.620773   \n50%   -1.836970e-16      0.000000     -0.222521      6.000000     13.125893   \n75%    7.071068e-01      0.781831      0.623490     24.000000     22.892391   \nmax    1.000000e+00      0.974928      1.000000     24.000000     31.303665   \n\n        precipDepth  \ncount  24000.000000  \nmean    1049.372667  \nstd     2806.581138  \nmin        0.000000  \n25%        0.000000  \n50%       10.000000  \n75%      132.000000  \nmax     9999.000000  ",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>vendorID</th>\n      <th>passengerCount</th>\n      <th>tripDistance</th>\n      <th>pickupLongitude</th>\n      <th>pickupLatitude</th>\n      <th>dropoffLongitude</th>\n      <th>dropoffLatitude</th>\n      <th>totalAmount</th>\n      <th>month_num</th>\n      <th>day_of_month</th>\n      <th>day_of_week</th>\n      <th>hour_of_day</th>\n      <th>hr_sin</th>\n      <th>hr_cos</th>\n      <th>dy_sin</th>\n      <th>dy_cos</th>\n      <th>precipTime</th>\n      <th>temperature</th>\n      <th>precipDepth</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>count</th>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>12000.000000</td>\n      <td>12000.000000</td>\n      <td>12000.000000</td>\n      <td>12000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>2.400000e+04</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n      <td>24000.000000</td>\n    </tr>\n    <tr>\n      <th>mean</th>\n      <td>1.789083</td>\n      <td>1.351458</td>\n      <td>2.771344</td>\n      <td>-73.860855</td>\n      <td>40.702767</td>\n      <td>-73.834694</td>\n      <td>40.687242</td>\n      <td>14.589768</td>\n      <td>6.500000</td>\n      <td>15.110458</td>\n      <td>3.229417</td>\n      <td>13.634625</td>\n      <td>-0.250167</td>\n      <td>-2.053736e-02</td>\n      <td>-0.074602</td>\n      <td>-0.054395</td>\n      <td>13.302833</td>\n      <td>13.901122</td>\n      <td>1049.372667</td>\n    </tr>\n    <tr>\n      <th>std</th>\n      <td>0.407968</td>\n      <td>1.022976</td>\n      <td>2.812725</td>\n      <td>2.461782</td>\n      <td>1.342358</td>\n      <td>2.806899</td>\n      <td>1.534254</td>\n      <td>11.220269</td>\n      <td>3.452124</td>\n      <td>8.442609</td>\n      <td>1.956620</td>\n      <td>6.675595</td>\n      <td>0.662128</td>\n      <td>7.061302e-01</td>\n      <td>0.714403</td>\n      <td>0.693646</td>\n      <td>10.327326</td>\n      <td>9.488328</td>\n      <td>2806.581138</td>\n    </tr>\n    <tr>\n      <th>min</th>\n      <td>1.000000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>-115.172615</td>\n      <td>0.000000</td>\n      <td>-115.149498</td>\n      <td>0.000000</td>\n      <td>-65.000000</td>\n      <td>1.000000</td>\n      <td>1.000000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>-1.000000</td>\n      <td>-1.000000e+00</td>\n      <td>-0.974928</td>\n      <td>-0.900969</td>\n      <td>1.000000</td>\n      <td>-13.379464</td>\n      <td>0.000000</td>\n    </tr>\n    <tr>\n      <th>25%</th>\n      <td>2.000000</td>\n      <td>1.000000</td>\n      <td>1.020000</td>\n      <td>-73.961561</td>\n      <td>40.694201</td>\n      <td>-73.968864</td>\n      <td>40.695167</td>\n      <td>7.850000</td>\n      <td>3.750000</td>\n      <td>8.000000</td>\n      <td>2.000000</td>\n      <td>9.000000</td>\n      <td>-0.866025</td>\n      <td>-7.071068e-01</td>\n      <td>-0.781831</td>\n      <td>-0.900969</td>\n      <td>6.000000</td>\n      <td>6.620773</td>\n      <td>0.000000</td>\n    </tr>\n    <tr>\n      <th>50%</th>\n      <td>2.000000</td>\n      <td>1.000000</td>\n      <td>1.820000</td>\n      <td>-73.946957</td>\n      <td>40.746147</td>\n      <td>-73.945759</td>\n      <td>40.746536</td>\n      <td>11.300000</td>\n      <td>6.500000</td>\n      <td>15.000000</td>\n      <td>3.000000</td>\n      <td>15.000000</td>\n      <td>-0.500000</td>\n      <td>-1.836970e-16</td>\n      <td>0.000000</td>\n      <td>-0.222521</td>\n      <td>6.000000</td>\n      <td>13.125893</td>\n      <td>10.000000</td>\n    </tr>\n    <tr>\n      <th>75%</th>\n      <td>2.000000</td>\n      <td>1.000000</td>\n      <td>3.500000</td>\n      <td>-73.919552</td>\n      <td>40.802370</td>\n      <td>-73.913908</td>\n      <td>40.791056</td>\n      <td>17.300000</td>\n      <td>9.250000</td>\n      <td>22.000000</td>\n      <td>5.000000</td>\n      <td>19.000000</td>\n      <td>0.258819</td>\n      <td>7.071068e-01</td>\n      <td>0.781831</td>\n      <td>0.623490</td>\n      <td>24.000000</td>\n      <td>22.892391</td>\n      <td>132.000000</td>\n    </tr>\n    <tr>\n      <th>max</th>\n      <td>2.000000</td>\n      <td>8.000000</td>\n      <td>35.040000</td>\n      <td>0.000000</td>\n      <td>40.920631</td>\n      <td>0.000000</td>\n      <td>41.030594</td>\n      <td>350.000000</td>\n      <td>12.000000</td>\n      <td>30.000000</td>\n      <td>6.000000</td>\n      <td>23.000000</td>\n      <td>1.000000</td>\n      <td>1.000000e+00</td>\n      <td>0.974928</td>\n      <td>1.000000</td>\n      <td>24.000000</td>\n      <td>31.303665</td>\n      <td>9999.000000</td>\n    </tr>\n  </tbody>\n</table>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 10,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "From the summary statistics, you see that there are several fields that have outliers or values that will reduce model accuracy. First filter the lat/long fields to be within the same bounds you used for filtering weather data. The `tripDistance` field has some bad data, because the minimum value is negative. The `passengerCount` field has bad data as well, with the max value being 210 passengers. Lastly, the `totalAmount` field has negative values, which don't make sense in the context of our model.\n",
+        "\n",
+        "Filter out these anomolies using query functions, and then remove the last few columns unnecesary for training.\n",
+        "\n",
+        "Note: since a random sample of 2000 was taken for each month of the taxi data, the statistics may vary each time this is ran."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "final_df = taxi_holidays_weather_df.query(\"pickupLatitude>=40.53 and pickupLatitude<=40.88 and \\\n",
+        "                                           pickupLongitude>=-74.09 and pickupLongitude<=-73.72 and \\\n",
+        "                                           tripDistance>0 and tripDistance<75 and \\\n",
+        "                                           passengerCount>0 and passengerCount<100 and \\\n",
+        "                                           totalAmount>0\")"
+      ],
+      "outputs": [],
+      "execution_count": 11,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Call `describe()` again on the data to ensure cleansing worked as expected. The final data is prepared and cleansed, consisting of taxi, holiday, and weather data, and is ready to use for machine learning model training."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "final_df.describe()"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 12,
+          "data": {
+            "text/plain": "           vendorID  passengerCount  tripDistance  pickupLongitude  \\\ncount  11761.000000    11761.000000  11761.000000     11761.000000   \nmean       1.791174        1.357027      2.813654       -73.937924   \nstd        0.406487        1.032789      2.836194         0.041281   \nmin        1.000000        1.000000      0.010000       -74.087280   \n25%        2.000000        1.000000      1.080000       -73.961800   \n50%        2.000000        1.000000      1.880000       -73.947365   \n75%        2.000000        1.000000      3.500000       -73.920479   \nmax        2.000000        8.000000     34.200000       -73.730370   \n\n       pickupLatitude  dropoffLongitude  dropoffLatitude   totalAmount  \\\ncount    11761.000000      11761.000000     11761.000000  11761.000000   \nmean        40.746882        -73.911200        40.731156     14.593226   \nstd          0.056801          1.364268         0.753539     10.383987   \nmin         40.575375        -74.254807         0.000000      0.010000   \n25%         40.694202        -73.969200        40.695267      8.150000   \n50%         40.745987        -73.946266        40.746372     11.300000   \n75%         40.802116        -73.914520        40.790382     17.300000   \nmax         40.879826          0.000000        41.030594    150.000000   \n\n          month_num  day_of_month   day_of_week   hour_of_day        hr_sin  \\\ncount  11761.000000  11761.000000  11761.000000  11761.000000  11761.000000   \nmean       3.500298     15.000680      3.225916     13.637191     -0.250263   \nstd        1.707682      8.435137      1.962158      6.663568      0.662989   \nmin        1.000000      1.000000      0.000000      0.000000     -1.000000   \n25%        2.000000      8.000000      2.000000      9.000000     -0.866025   \n50%        4.000000     15.000000      3.000000     15.000000     -0.500000   \n75%        5.000000     22.000000      5.000000     19.000000      0.258819   \nmax        6.000000     30.000000      6.000000     23.000000      1.000000   \n\n             hr_cos        dy_sin        dy_cos    precipTime   temperature  \\\ncount  1.176100e+04  11761.000000  11761.000000  11761.000000  11761.000000   \nmean  -2.344466e-02     -0.073233     -0.050101     11.893036     10.284641   \nstd    7.052264e-01      0.714244      0.694310     10.108213      8.541310   \nmin   -1.000000e+00     -0.974928     -0.900969      1.000000    -13.379464   \n25%   -7.071068e-01     -0.781831     -0.900969      1.000000      3.504580   \n50%   -1.836970e-16      0.000000     -0.222521      6.000000     10.168182   \n75%    7.071068e-01      0.781831      0.623490     24.000000     17.239744   \nmax    1.000000e+00      0.974928      1.000000     24.000000     26.524107   \n\n        precipDepth  \ncount  11761.000000  \nmean     203.227277  \nstd     1262.726122  \nmin        0.000000  \n25%        0.000000  \n50%        3.000000  \n75%       41.000000  \nmax     9999.000000  ",
+            "text/html": "<div>\n<style scoped>\n    .dataframe tbody tr th:only-of-type {\n        vertical-align: middle;\n    }\n\n    .dataframe tbody tr th {\n        vertical-align: top;\n    }\n\n    .dataframe thead th {\n        text-align: right;\n    }\n</style>\n<table border=\"1\" class=\"dataframe\">\n  <thead>\n    <tr style=\"text-align: right;\">\n      <th></th>\n      <th>vendorID</th>\n      <th>passengerCount</th>\n      <th>tripDistance</th>\n      <th>pickupLongitude</th>\n      <th>pickupLatitude</th>\n      <th>dropoffLongitude</th>\n      <th>dropoffLatitude</th>\n      <th>totalAmount</th>\n      <th>month_num</th>\n      <th>day_of_month</th>\n      <th>day_of_week</th>\n      <th>hour_of_day</th>\n      <th>hr_sin</th>\n      <th>hr_cos</th>\n      <th>dy_sin</th>\n      <th>dy_cos</th>\n      <th>precipTime</th>\n      <th>temperature</th>\n      <th>precipDepth</th>\n    </tr>\n  </thead>\n  <tbody>\n    <tr>\n      <th>count</th>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>1.176100e+04</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n      <td>11761.000000</td>\n    </tr>\n    <tr>\n      <th>mean</th>\n      <td>1.791174</td>\n      <td>1.357027</td>\n      <td>2.813654</td>\n      <td>-73.937924</td>\n      <td>40.746882</td>\n      <td>-73.911200</td>\n      <td>40.731156</td>\n      <td>14.593226</td>\n      <td>3.500298</td>\n      <td>15.000680</td>\n      <td>3.225916</td>\n      <td>13.637191</td>\n      <td>-0.250263</td>\n      <td>-2.344466e-02</td>\n      <td>-0.073233</td>\n      <td>-0.050101</td>\n      <td>11.893036</td>\n      <td>10.284641</td>\n      <td>203.227277</td>\n    </tr>\n    <tr>\n      <th>std</th>\n      <td>0.406487</td>\n      <td>1.032789</td>\n      <td>2.836194</td>\n      <td>0.041281</td>\n      <td>0.056801</td>\n      <td>1.364268</td>\n      <td>0.753539</td>\n      <td>10.383987</td>\n      <td>1.707682</td>\n      <td>8.435137</td>\n      <td>1.962158</td>\n      <td>6.663568</td>\n      <td>0.662989</td>\n      <td>7.052264e-01</td>\n      <td>0.714244</td>\n      <td>0.694310</td>\n      <td>10.108213</td>\n      <td>8.541310</td>\n      <td>1262.726122</td>\n    </tr>\n    <tr>\n      <th>min</th>\n      <td>1.000000</td>\n      <td>1.000000</td>\n      <td>0.010000</td>\n      <td>-74.087280</td>\n      <td>40.575375</td>\n      <td>-74.254807</td>\n      <td>0.000000</td>\n      <td>0.010000</td>\n      <td>1.000000</td>\n      <td>1.000000</td>\n      <td>0.000000</td>\n      <td>0.000000</td>\n      <td>-1.000000</td>\n      <td>-1.000000e+00</td>\n      <td>-0.974928</td>\n      <td>-0.900969</td>\n      <td>1.000000</td>\n      <td>-13.379464</td>\n      <td>0.000000</td>\n    </tr>\n    <tr>\n      <th>25%</th>\n      <td>2.000000</td>\n      <td>1.000000</td>\n      <td>1.080000</td>\n      <td>-73.961800</td>\n      <td>40.694202</td>\n      <td>-73.969200</td>\n      <td>40.695267</td>\n      <td>8.150000</td>\n      <td>2.000000</td>\n      <td>8.000000</td>\n      <td>2.000000</td>\n      <td>9.000000</td>\n      <td>-0.866025</td>\n      <td>-7.071068e-01</td>\n      <td>-0.781831</td>\n      <td>-0.900969</td>\n      <td>1.000000</td>\n      <td>3.504580</td>\n      <td>0.000000</td>\n    </tr>\n    <tr>\n      <th>50%</th>\n      <td>2.000000</td>\n      <td>1.000000</td>\n      <td>1.880000</td>\n      <td>-73.947365</td>\n      <td>40.745987</td>\n      <td>-73.946266</td>\n      <td>40.746372</td>\n      <td>11.300000</td>\n      <td>4.000000</td>\n      <td>15.000000</td>\n      <td>3.000000</td>\n      <td>15.000000</td>\n      <td>-0.500000</td>\n      <td>-1.836970e-16</td>\n      <td>0.000000</td>\n      <td>-0.222521</td>\n      <td>6.000000</td>\n      <td>10.168182</td>\n      <td>3.000000</td>\n    </tr>\n    <tr>\n      <th>75%</th>\n      <td>2.000000</td>\n      <td>1.000000</td>\n      <td>3.500000</td>\n      <td>-73.920479</td>\n      <td>40.802116</td>\n      <td>-73.914520</td>\n      <td>40.790382</td>\n      <td>17.300000</td>\n      <td>5.000000</td>\n      <td>22.000000</td>\n      <td>5.000000</td>\n      <td>19.000000</td>\n      <td>0.258819</td>\n      <td>7.071068e-01</td>\n      <td>0.781831</td>\n      <td>0.623490</td>\n      <td>24.000000</td>\n      <td>17.239744</td>\n      <td>41.000000</td>\n    </tr>\n    <tr>\n      <th>max</th>\n      <td>2.000000</td>\n      <td>8.000000</td>\n      <td>34.200000</td>\n      <td>-73.730370</td>\n      <td>40.879826</td>\n      <td>0.000000</td>\n      <td>41.030594</td>\n      <td>150.000000</td>\n      <td>6.000000</td>\n      <td>30.000000</td>\n      <td>6.000000</td>\n      <td>23.000000</td>\n      <td>1.000000</td>\n      <td>1.000000e+00</td>\n      <td>0.974928</td>\n      <td>1.000000</td>\n      <td>24.000000</td>\n      <td>26.524107</td>\n      <td>9999.000000</td>\n    </tr>\n  </tbody>\n</table>\n</div>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 12,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "## Train a model\n",
+        "\n",
+        "The data is ready to train a machine learning model."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from sklearn.linear_model import LinearRegression\n",
+        "from sklearn.linear_model import RidgeCV\n",
+        "from sklearn.linear_model import Ridge\n",
+        "from sklearn.ensemble import RandomForestRegressor\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.pipeline import Pipeline\n",
+        "from sklearn.preprocessing import OneHotEncoder\n",
+        "from sklearn.impute import SimpleImputer\n",
+        "from sklearn.compose import ColumnTransformer\n",
+        "from sklearn.metrics import r2_score, mean_absolute_percentage_error, mean_squared_error"
+      ],
+      "outputs": [],
+      "execution_count": 13,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "### Training Function\n",
+        "\n",
+        "Define a function that can be used to create a model pipeline that can be trained and then used for scoring. This pipeline has 2 steps: preprocessing and model training.\n",
+        "\n",
+        "<b>Preprocessing Stages:</b>\n",
+        "The preprocessing step of the pipeline also has 2 stages, one for numerical features and one for categorical features.\n",
+        "For the numerical features, let's fill in any blanks with 0's. While the training data may not have any nulls in the these fields, future data that is scored may and this step will take care of those for us. Optionally, a scaler transformation could be added in this step as well. Similarly for the categorical variables, let's have the null values filled with \"MISSING\". Additionally to the categorical variables, these will need to be one hot encoded, so we will include that step in our pipeline.\n",
+        "\n",
+        "<b>Model Training Stage:</b>\n",
+        "An input parameter will determine which type of model of train. Let's test out a linear regression and random forest model to start. \n",
+        "\n",
+        "The two steps are put together into the pipeline which is what the function is returning."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def createClassModel(algo_name, catg, nums):\n",
+        "  numeric_transformer = Pipeline(steps=[('imputer', SimpleImputer(strategy='constant', fill_value=0))])\n",
+        "  \n",
+        "  categorical_transformer = Pipeline(steps=[('imputer', SimpleImputer(strategy='constant', fill_value=\"MISSING\")), ('onehot', OneHotEncoder(handle_unknown='ignore'))])\n",
+        "  \n",
+        "  preprocesser = ColumnTransformer(transformers=[('num', numeric_transformer, nums), ('cat', categorical_transformer, catg)])\n",
+        "  \n",
+        "  if algo_name == 'linear_regression':\n",
+        "    model=Ridge(alpha=100)\n",
+        "  elif algo_name == 'random_forest':\n",
+        "    model = RandomForestRegressor()\n",
+        "  else:\n",
+        "    pass\n",
+        "  ModelPipeline = Pipeline(steps=[('preprocessor', preprocesser), (\"model\", model)])\n",
+        "  return ModelPipeline"
+      ],
+      "outputs": [],
+      "execution_count": 14,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Let's define the arguments that will be passed to the function. `catg_cols` is a list of the categorical variables that will be transformed in our processing step. `num_cols` is a list of the numerical variables that will be transformed in our processing step. Let's define the target column as `label` so it can be used in future steps as well."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "catg_cols = [\"vendorID\", \"month_num\", \"day_of_month\", \"normalizeHolidayName\", \"isPaidTimeOff\"]\n",
+        "num_cols = [\"passengerCount\", \"tripDistance\", \"precipTime\", \"temperature\", \"precipDepth\", \"hr_sin\", \"hr_cos\", \"dy_sin\", \"dy_cos\"]\n",
+        "label = [\"totalAmount\"]"
+      ],
+      "outputs": [],
+      "execution_count": 15,
+      "metadata": {}
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "The training is ready to begin, but first, let's make sure that the categorical variables are strings in our dataframe to ensure no errors in our pipeline. \n",
+        "\n",
+        "Next, the data is split into training and test sets by using the `train_test_split()` function in the `scikit-learn` library. The `test_size` parameter determines the percentage of data to allocate to testing. The `random_state` parameter sets a seed to the random number generator, so that your train-test splits are deterministic.\n",
+        "\n",
+        "The training will happen in the for loop so that both algorithms can be tested. The createClassModel funtion is called to retreive the pipeline that can then be trained using the training dataset. \n",
+        "\n",
+        "Once trained, the test dataset is then ran through the model to test the model's performance. Using various functions from sklearn.metrics, the R2 score, MAPE, and RMSE can be used to measure model performance."
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# make sure categorical columns are strings\n",
+        "final_df[catg_cols] = final_df[catg_cols].astype(\"str\")\n",
+        "\n",
+        "# split data\n",
+        "X_train, X_test, y_train, y_test = train_test_split(final_df.drop(label, axis=1), final_df[label], test_size=0.2, random_state=222)\n",
+        "\n",
+        "# test 2 algorithms\n",
+        "for algorithmname in [\"linear_regression\", 'random_forest']:\n",
+        "    fitPipeline = createClassModel(algorithmname, catg_cols, num_cols) # get pipeline\n",
+        "    fitPipeline.fit(X_train, y_train.values.ravel())                   # fit pipeine\n",
+        "\n",
+        "    y_pred = fitPipeline.predict(X_test)                               # score with fitted pipeline\n",
+        "\n",
+        "    # Evaluate\n",
+        "    r2 = r2_score(y_test, y_pred)\n",
+        "    mape = mean_absolute_percentage_error(y_test, y_pred)\n",
+        "    rmse = np.sqrt(mean_squared_error(y_test, y_pred))\n",
+        "\n",
+        "    print(algorithmname)\n",
+        "    print(\"R2:\", r2)\n",
+        "    print(\"MAPE:\", mape)\n",
+        "    print(\"RMSE:\", rmse)\n",
+        "    print()"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "linear_regression\nR2: 0.8066776720143709\nMAPE: 0.15359203002632926\nRMSE: 4.821993064697425\n\nrandom_forest\nR2: 0.800584415779451\nMAPE: 0.15346101127277137\nRMSE: 4.897394857486699\n\n"
+        }
+      ],
+      "execution_count": 16,
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "interpreter": {
+      "hash": "74e9702761b8f12846716a18132904990016d49f378e22e0e13a0e91318de754"
+    },
+    "kernelspec": {
+      "name": "mlops-workshop-local",
+      "language": "python",
+      "display_name": "mlops-wrkshp"
+    },
+    "language_info": {
+      "name": "python",
+      "version": "3.8.13",
+      "mimetype": "text/x-python",
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "pygments_lexer": "ipython3",
+      "nbconvert_exporter": "python",
+      "file_extension": ".py"
+    },
+    "orig_nbformat": 4,
+    "kernel_info": {
+      "name": "mlops-workshop-local"
+    },
+    "nteract": {
+      "version": "nteract-front-end@1.0.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
